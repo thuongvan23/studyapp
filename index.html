@@ -1270,6 +1270,8 @@ function aiSuggestion(u){
    ============================================================ */
 let AI_OK = true;
 const GEMINI_KEY = 'AQ.Ab8RN6I02bslrqxrT5r9NG0PjOpLlvX6nnYkKKXHPWKWt2NfXA';
+/* gemini-2.5-flash đã ngừng phục vụ generateContent cho tài khoản này (404 "no longer available
+   to new users") — dùng gemini-3.5-flash-lite: nhanh (~1s, không tốn thinking token), phù hợp demo. */
 const GEMINI_MODEL = 'gemini-3.5-flash-lite';
 
 /* Quy tắc hệ thống ẩn — luôn ghép trước mọi system prompt, người dùng không thể ghi đè qua chat.
@@ -1285,7 +1287,7 @@ async function askAI(messages, system, maxTokens=1000, json=false){
     role: m.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: m.content }]
   }));
-  const generationConfig = { maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: 0 } };
+  const generationConfig = { maxOutputTokens: maxTokens };
   if(json) generationConfig.responseMimeType = 'application/json';
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
     method:'POST',
