@@ -1322,6 +1322,79 @@ Nguyên tắc:
 - Không dùng bảng Markdown; ưu tiên câu ngắn và gạch đầu dòng.
 - Nếu câu hỏi ngoài phạm vi Tin học 10, vẫn hỗ trợ nhưng nhắc học sinh quay lại lộ trình.`;
 
+/* Ngữ cảnh trang hiện tại — ghép vào mọi lời gọi AI để trợ lý "biết" người hỏi là ai,
+   đang ở trang nào, đang xem/làm gì. Chỉ dùng dữ liệu công khai trong phiên đăng nhập
+   của chính người đó, không phải thông tin bí mật. */
+function pageContext(){
+  const u = S.me;
+  if(!u) return '';
+  const base = u.role==='teacher'
+    ? `Người hỏi là giáo viên môn Tin học 10, đang phụ trách lớp 10A3 gồm ${students().length} học sinh trải trên 4 cấp độ.`
+    : `Người hỏi là học sinh lớp 10, được xếp cấp độ ${u.level?levelOf(u.level).name:'chưa xác định'}, đã đạt ${doneCount(u)}/${LESSONS.length} bài, điểm trung bình ${avgScore(u)||0}%.`;
+
+  let page = '';
+  switch(S.view){
+    case 'home': {
+      const rank = ranking().findIndex(x=>x.id===u.id) + 1;
+      page = `Đang ở trang Lộ trình. Mức thành thạo chương trình ${masteryPct(u)}%, hạng #${rank} trong lớp.`;
+      break;
+    }
+    case 'library':
+      page = `Đang ở trang Thư viện học liệu, duyệt/tìm học liệu để ôn tập.`;
+      break;
+    case 'lesson': {
+      const L = S.work && S.work.id ? lessonById(S.work.id) : null;
+      if(L){
+        const names = {theory:'Lý thuyết', quiz:'Trắc nghiệm', code:'Thực hành code', result:'Kết quả'};
+        page = `Đang học bài "${L.title}" (cấp ${L.lv}, ${L.topic}), ở bước "${names[S.work.step]||S.work.step}".`;
+      }
+      break;
+    }
+    case 'final': {
+      const prev = u.final;
+      page = prev && prev.done
+        ? `Đang ở trang Kiểm tra tổng kết. Đã hoàn thành, điểm cao nhất ${prev.score}/100.`
+        : `Đang ở trang Kiểm tra tổng kết, chưa hoàn thành lần nào.`;
+      break;
+    }
+    case 'board': {
+      const rank = ranking().findIndex(x=>x.id===u.id) + 1;
+      page = `Đang xem Bảng xếp hạng, đứng hạng #${rank} với ${u.xp} điểm tích lũy.`;
+      break;
+    }
+    case 'model':
+      page = `Đang xem trang giới thiệu mô hình dạy học thích ứng của NHỊP (quy trình 7 bước, vai trò các bên).`;
+      break;
+    case 'ai':
+      page = `Đang ở trang Trợ lý AI riêng (không phải khung chat nổi).`;
+      break;
+    case 't-home': {
+      const ss = students();
+      const avg = ss.length ? Math.round(ss.reduce((s,x)=>s+avgScore(x),0)/ss.length) : 0;
+      page = `Đang ở trang Tổng quan lớp học. Điểm trung bình toàn lớp ${avg}%.`;
+      break;
+    }
+    case 't-students':
+      page = `Đang xem Danh sách học sinh của lớp.`;
+      break;
+    case 't-student': {
+      const su = S.db && S.db.users[S.params.id];
+      if(su){
+        const weak = LESSONS.filter(L=>{ const r=su.progress[L.id]; return r && (!r.done || r.best<80); }).map(L=>L.title);
+        page = `Đang xem chi tiết học sinh "${su.name}" (${su.id}): cấp độ ${su.level?levelOf(su.level).name:'chưa làm bài đầu vào'}, điểm trung bình ${avgScore(su)||0}%, đã đạt ${doneCount(su)}/${LESSONS.length} bài. Các bài còn yếu: ${weak.join(', ')||'không có'}.`;
+      }
+      break;
+    }
+    case 't-board':
+      page = `Đang xem Bảng xếp hạng của lớp.`;
+      break;
+    case 't-content':
+      page = `Đang duyệt Ngân hàng nội dung môn học.`;
+      break;
+  }
+  return page ? base + '\n' + page : base;
+}
+
 /* Chấm bài code bằng AI, có phương án dự phòng theo rubric */
 async function gradeCode(ex, src){
   try{
@@ -1339,7 +1412,7 @@ ${src}
 
 Chỉ trả về JSON thuần, không giải thích thêm, theo đúng dạng:
 {"score": <0-100>, "verdict":"<một câu kết luận>", "output":"<dự đoán kết quả in ra khi chạy, hoặc mô tả lỗi>", "errors":[{"where":"<dòng hoặc đoạn lệnh>","what":"<sai cái gì>","why":"<vì sao sai>","fix":"<sửa thế nào>"}], "comment":"<nhận xét chung 2-3 câu, khen điểm tốt trước rồi góp ý>"}
-Nếu bài làm đúng hoàn toàn thì errors là mảng rỗng.`}], TUTOR_SYS, 1400, true);
+Nếu bài làm đúng hoàn toàn thì errors là mảng rỗng.`}], TUTOR_SYS + '\n' + pageContext(), 1400, true);
     const j = parseJSON(out);
     j.score = clamp(Math.round(j.score||0), 0, 100);
     j.ai = true;
@@ -1384,7 +1457,7 @@ async function coachSummary(ctx){
     return await askAI([{role:'user', content:
 `Học sinh lớp 10 vừa hoàn thành ${ctx.what}. Điểm: ${ctx.score}/100 (mức đạt là 70).
 Các nội dung làm sai: ${ctx.wrong.length ? ctx.wrong.join('; ') : 'không có'}.
-Hãy viết 3-4 câu tiếng Việt: ghi nhận điều em làm tốt, chỉ ra chỗ cần củng cố, và gợi ý một việc cụ thể nên làm tiếp theo. Không dùng tiêu đề, không dùng markdown.`}], TUTOR_SYS, 400);
+Hãy viết 3-4 câu tiếng Việt: ghi nhận điều em làm tốt, chỉ ra chỗ cần củng cố, và gợi ý một việc cụ thể nên làm tiếp theo. Không dùng tiêu đề, không dùng markdown.`}], TUTOR_SYS + '\n' + pageContext(), 400);
   }catch(e){
     AI_OK = false;
     if(ctx.score>=PASS && !ctx.wrong.length) return 'Bạn làm rất chắc, không sai câu nào. Hãy thử làm lại phần bài tập lập trình theo một cách viết khác để hiểu sâu hơn, rồi chuyển sang bài tiếp theo.';
@@ -2479,7 +2552,7 @@ async function adviseStudent(id){
 - Điểm đầu vào: ${u.placement&&u.placement.done?u.placement.score+'%':'chưa có'}
 - Số bài đã đạt: ${doneCount(u)}/${LESSONS.length}, điểm trung bình ${avgScore(u)}%
 - Các bài còn yếu: ${weak.join(', ')||'không có'}
-Hãy viết 4-5 câu tiếng Việt đề xuất phương án hỗ trợ sư phạm cụ thể cho học sinh này: nên phụ đạo nội dung nào, giao nhiệm vụ dạng gì, xếp vào nhóm học tập nào. Không dùng markdown, không dùng tiêu đề.`}], TUTOR_SYS, 500);
+Hãy viết 4-5 câu tiếng Việt đề xuất phương án hỗ trợ sư phạm cụ thể cho học sinh này: nên phụ đạo nội dung nào, giao nhiệm vụ dạng gì, xếp vào nhóm học tập nào. Không dùng markdown, không dùng tiêu đề.`}], TUTOR_SYS + '\n' + pageContext(), 500);
   }catch(e){
     AI_OK = false;
     const lv = u.level||1;
@@ -2523,14 +2596,11 @@ async function chatSend(text){
   if(!q || S.chatBusy) return;
   S.chatLog.push({role:'user', content:q});
   S.chatBusy = true; render();
-  const ctx = S.me.role==='teacher'
-    ? `Người hỏi là giáo viên môn Tin học 10, đang phụ trách lớp 10A3 gồm ${students().length} học sinh trải trên 4 cấp độ.`
-    : `Người hỏi là học sinh lớp 10, được xếp cấp độ ${S.me.level?levelOf(S.me.level).name:'chưa xác định'}, đã đạt ${doneCount(S.me)}/${LESSONS.length} bài${S.view==='lesson'&&S.work?`, đang học bài "${lessonById(S.work.id).title}"`:''}.`;
   let ans;
   try{
     ans = await askAI(
       S.chatLog.slice(-10).map(m=>({role:m.role==='user'?'user':'assistant', content:m.content})),
-      TUTOR_SYS + '\nBối cảnh: ' + ctx, 900);
+      TUTOR_SYS + '\nBối cảnh: ' + pageContext(), 900);
     AI_OK = true;
   }catch(e){
     AI_OK = false;
